@@ -29,7 +29,7 @@ func main() {
 
 	acc := accessory.NewLightbulb(info)
 
-	broker := flag.String("broker", "tcp://hahub.local:1883", "The broker URI. ex: tcp://10.10.1.1:1883")
+	broker := flag.String("broker", "tcp://localhost:1883", "The broker URI. ex: tcp://10.10.1.1:1883")
 	password := flag.String("password", "", "The password (optional)")
 	user := flag.String("user", "", "The User (optional)")
 	id := flag.String("id", "testgoid", "The ClientID (optional)")
@@ -49,13 +49,6 @@ func main() {
 		opts.SetStore(MQTT.NewFileStore(*store))
 	}
 
-        opts.SetDefaultPublishHandler(func(mqttClient MQTT.Client, msg MQTT.Message) {
-		if msg.Topic() == "oh-out/state/LR_NW_Light" {
-			pl := string(msg.Payload())
-			fmt.Printf("got msg: %s on %s\n", pl, msg.Topic())
-			acc.Lightbulb.On.SetValue(strings.EqualFold(pl, "ON"))
-		}
-        })
 
 	mqttClient := MQTT.NewClient(opts)
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
@@ -63,7 +56,11 @@ func main() {
 	}
 
 	topic	:= "oh-out/state/LR_NW_Light"
-        if token := mqttClient.Subscribe(topic, byte(*qos), nil); token.Wait() && token.Error() != nil {
+        if token := mqttClient.Subscribe(topic, byte(*qos), func(cl MQTT.Client, msg MQTT.Message){
+			pl := string(msg.Payload())
+			fmt.Printf("got msg: %s on %s\n", pl, msg.Topic())
+			acc.Lightbulb.On.SetValue(strings.EqualFold(pl, "ON"))
+		}); token.Wait() && token.Error() != nil {
                 fmt.Println(token.Error())
                 os.Exit(1)
         }
