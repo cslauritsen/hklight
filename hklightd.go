@@ -27,6 +27,8 @@ func main() {
 		Model:		"On-Off Module",
 	}
 
+	msgq	:= make(chan [2]string)
+
 	acc := accessory.NewLightbulb(info)
 
 	broker := flag.String("broker", "tcp://localhost:1883", "The broker URI. ex: tcp://10.10.1.1:1883")
@@ -38,7 +40,6 @@ func main() {
 	store := flag.String("store", ":memory:", "The Store Directory (default use memory store)")
 	flag.Parse()
 
-
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(*broker)
 	opts.SetClientID(*id)
@@ -49,7 +50,6 @@ func main() {
 		opts.SetStore(MQTT.NewFileStore(*store))
 	}
 
-
 	mqttClient := MQTT.NewClient(opts)
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
@@ -57,9 +57,7 @@ func main() {
 
 	topic	:= "oh-out/state/LR_NW_Light"
         if token := mqttClient.Subscribe(topic, byte(*qos), func(cl MQTT.Client, msg MQTT.Message){
-			pl := string(msg.Payload())
-			fmt.Printf("got msg: %s on %s\n", pl, msg.Topic())
-			acc.Lightbulb.On.SetValue(strings.EqualFold(pl, "ON"))
+			msgq <- [2]string{msg.Topic(), string(msg.Payload())}
 		}); token.Wait() && token.Error() != nil {
                 fmt.Println(token.Error())
                 os.Exit(1)
@@ -93,5 +91,12 @@ func main() {
 	})
 
 
+	go processMqttMsg(msgq, acc)
 	t.Start()
+}
+
+func processMqttMsg(msgq chan [2]string , acc *accessory.Lightbulb) {
+	incoming :=  <- msgq
+	fmt.Printf("got msg: %s on %s\n", incoming[1], incoming[0])
+	acc.Lightbulb.On.SetValue(strings.EqualFold(incoming[1], "ON"))
 }
