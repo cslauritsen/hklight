@@ -7,6 +7,8 @@ import (
 	"github.com/brutella/hc/accessory"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"log"
+	"os"
+	"strings"
 )
 
 func turnLightOn() {
@@ -18,27 +20,24 @@ func turnLightOff() {
 }
 
 func main() {
+	info := accessory.Info{
+		Name:         	"Lamp",
+		Manufacturer: 	"Insteon",
+		SerialNumber: 	"2D.83.B4",
+		Model:		"On-Off Module",
+	}
+
+	acc := accessory.NewLightbulb(info)
+
 	broker := flag.String("broker", "tcp://hahub.local:1883", "The broker URI. ex: tcp://10.10.1.1:1883")
 	password := flag.String("password", "", "The password (optional)")
 	user := flag.String("user", "", "The User (optional)")
 	id := flag.String("id", "testgoid", "The ClientID (optional)")
 	cleansess := flag.Bool("clean", false, "Set Clean Session (default false)")
 	qos := flag.Int("qos", 0, "The Quality of Service 0,1,2 (default 0)")
-	num := flag.Int("num", 1, "The number of messages to publish or subscribe (default 1)")
-	payload := flag.String("message", "", "The message text to publish (default empty)")
 	store := flag.String("store", ":memory:", "The Store Directory (default use memory store)")
 	flag.Parse()
 
-	fmt.Printf("Sample Info:\n")
-	fmt.Printf("\tbroker:    %s\n", *broker)
-	fmt.Printf("\tclientid:  %s\n", *id)
-	fmt.Printf("\tuser:      %s\n", *user)
-	fmt.Printf("\tpassword:  %s\n", *password)
-	fmt.Printf("\tmessage:   %s\n", *payload)
-	fmt.Printf("\tqos:       %d\n", *qos)
-	fmt.Printf("\tcleansess: %v\n", *cleansess)
-	fmt.Printf("\tnum:       %d\n", *num)
-	fmt.Printf("\tstore:     %s\n", *store)
 
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(*broker)
@@ -50,19 +49,24 @@ func main() {
 		opts.SetStore(MQTT.NewFileStore(*store))
 	}
 
+        opts.SetDefaultPublishHandler(func(mqttClient MQTT.Client, msg MQTT.Message) {
+		if msg.Topic() == "oh-out/state/LR_NW_Light" {
+			pl := string(msg.Payload())
+			fmt.Printf("got msg: %s on %s\n", pl, msg.Topic())
+			acc.Lightbulb.On.SetValue(strings.EqualFold(pl, "ON"))
+		}
+        })
+
 	mqttClient := MQTT.NewClient(opts)
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
 
-	info := accessory.Info{
-		Name:         	"Lamp",
-		Manufacturer: 	"Insteon",
-		SerialNumber: 	"2D.83.B4",
-		Model:		"On-Off Module",
-	}
-
-	acc := accessory.NewLightbulb(info)
+	topic	:= "oh-out/state/LR_NW_Light"
+        if token := mqttClient.Subscribe(topic, byte(*qos), nil); token.Wait() && token.Error() != nil {
+                fmt.Println(token.Error())
+                os.Exit(1)
+        }
 
 	acc.Lightbulb.On.OnValueRemoteUpdate(func(on bool) {
 		if on == true {
@@ -90,6 +94,7 @@ func main() {
 		mqttClient.Disconnect(250)
 		fmt.Println("Disconnecting from mqtt broker")
 	})
+
 
 	t.Start()
 }
